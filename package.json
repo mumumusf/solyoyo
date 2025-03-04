@@ -1,0 +1,33 @@
+{
+  "name": "wallets-monitor",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "setup:telegram": "node scripts/setup-telegram.js",
+    "setup:webhook": "node scripts/run.js",
+    "monitor": "node src/strategy/index.js",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "axios": "^1.7.9",
+    "axios-retry": "^4.5.0",
+    "bignumber.js": "^9.1.2",
+    "dotenv": "^16.3.1",
+    "node-fetch": "^3.3.2",
+    "openai": "^4.20.1",
+    "helius-sdk": "^1.4.2",
+    "next": "^14.0.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "eslint": "^9",
+    "eslint-config-next": "15.2.0"
+  }
+}
