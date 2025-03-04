@@ -3,8 +3,6 @@ import { processSwapData } from '../../../utils/swapProcessor';
 import { solParser } from '../../../utils/txParser';
 import { NextResponse } from 'next/server';
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
-
 export async function POST(request) {
   // Check authorization
   const authHeader = request.headers.get('authorization');
@@ -34,6 +32,15 @@ export async function POST(request) {
   } else {
     return NextResponse.json({ skipped: true, message: 'No swap data' });
   }
+
+  // 检查必要的环境变量
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
+    console.error('Missing Supabase environment variables');
+    return NextResponse.json({ error: 'Database configuration error' }, { status: 500 });
+  }
+
+  // 初始化 Supabase 客户端
+  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
   // Store to database
   const { error } = await supabase.from('txs').insert([{
