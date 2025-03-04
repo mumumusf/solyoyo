@@ -11,7 +11,7 @@ export default function DocsPage() {
         <div className={styles.content}>
           <section className={styles.section}>
             <h2>快速开始</h2>
-            <p>Solana 钱包监控是一个实时监控 Solana 钱包活动和交易的工具。通过 Telegram 机器人，您可以方便地管理和监控多个钱包地址。</p>
+            <p>Solana 钱包监控是一个实时监控 Solana 钱包活动和交易的工具。通过 Telegram 机器人（@yoyomyoyoabot），您可以方便地管理和监控多个钱包地址。</p>
           </section>
 
           <section className={styles.section}>

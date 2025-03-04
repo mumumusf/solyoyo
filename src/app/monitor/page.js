@@ -16,7 +16,7 @@ export default function MonitorPage() {
                 <div className={styles.stepNumber}>1</div>
                 <div className={styles.stepContent}>
                   <h3>添加机器人</h3>
-                  <p>在 Telegram 中搜索 <code>@SolanaWalletMonitorBot</code></p>
+                  <p>在 Telegram 中搜索 <code>@yoyomyoyoabot</code></p>
                 </div>
               </div>
               
@@ -61,7 +61,7 @@ export default function MonitorPage() {
           <section className={styles.startBox}>
             <p>立即开始使用 Solana 钱包监控机器人</p>
             <a
-              href="https://t.me/SolanaWalletMonitorBot"
+              href="https://t.me/yoyomyoyoabot"
               target="_blank"
               rel="noopener noreferrer"
               className={styles.button}
