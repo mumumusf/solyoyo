@@ -37,9 +37,9 @@ const HELP_MESSAGE = `
 `;
 
 // 发送 Telegram 消息
-export async function sendTelegramMessage(message, replyToMessageId = null) {
+export async function sendTelegramMessage(message, chatId = null, replyToMessageId = null) {
   const botToken = process.env.TELEGRAM_TOKEN;
-  const channelId = process.env.TELEGRAM_CHAT_ID;
+  const defaultChatId = process.env.TELEGRAM_CHAT_ID;
   const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
 
   try {
@@ -49,11 +49,11 @@ export async function sendTelegramMessage(message, replyToMessageId = null) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        chat_id: channelId,
+        chat_id: chatId || defaultChatId,
         text: message,
         parse_mode: 'HTML',
         disable_web_page_preview: true,
-        reply_to_message_id: replyToMessageId
+        ...(replyToMessageId ? { reply_to_message_id: replyToMessageId } : {})
       }),
     });
 
@@ -66,6 +66,10 @@ export async function sendTelegramMessage(message, replyToMessageId = null) {
     return data;
   } catch (error) {
     console.error('发送 Telegram 消息错误:', error);
+    // 如果回复特定消息失败，尝试发送普通消息
+    if (replyToMessageId && error.message.includes('message to be replied not found')) {
+      return sendTelegramMessage(message, chatId);
+    }
     throw error; 
   }
 }
@@ -87,11 +91,18 @@ export async function handleTelegramUpdate(update) {
     if (update.message && update.message.text) {
       const command = update.message.text.split(' ')[0];
       const response = await handleBasicCommand(command);
-      await sendTelegramMessage(response, update.message.message_id);
+      await sendTelegramMessage(
+        response,
+        update.message.chat.id,
+        update.message.message_id
+      );
     }
   } catch (error) {
     console.error('处理 Telegram 更新错误:', error);
-    await sendTelegramMessage('处理命令时发生错误，请稍后重试。', update.message?.message_id);
+    // 发送错误消息时不尝试回复原消息
+    if (update.message?.chat?.id) {
+      await sendTelegramMessage('处理命令时发生错误，请稍后重试。', update.message.chat.id);
+    }
   }
 }
 
