@@ -38,39 +38,57 @@ const HELP_MESSAGE = `
 
 // 发送 Telegram 消息
 export async function sendTelegramMessage(message, chatId = null, replyToMessageId = null) {
+  if (!message) {
+    throw new Error('消息内容不能为空');
+  }
+
+  if (!chatId) {
+    throw new Error('聊天 ID 不能为空');
+  }
+
   const botToken = process.env.TELEGRAM_TOKEN;
-  const defaultChatId = process.env.TELEGRAM_CHAT_ID;
   const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
 
   try {
+    const messageData = {
+      chat_id: chatId,
+      text: message,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true
+    };
+
+    // 只有在提供了有效的 message_id 时才添加回复参数
+    if (replyToMessageId && Number.isInteger(replyToMessageId) && replyToMessageId > 0) {
+      messageData.reply_to_message_id = replyToMessageId;
+    }
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        chat_id: chatId || defaultChatId,
-        text: message,
-        parse_mode: 'HTML',
-        disable_web_page_preview: true,
-        ...(replyToMessageId ? { reply_to_message_id: replyToMessageId } : {})
-      }),
+      body: JSON.stringify(messageData),
     });
 
     const data = await response.json();
     
     if (!data.ok) {
+      // 如果是回复消息失败，尝试发送普通消息
+      if (messageData.reply_to_message_id && data.description?.includes('message to be replied not found')) {
+        delete messageData.reply_to_message_id;
+        return sendTelegramMessage(message, chatId);
+      }
       throw new Error(`Telegram API 错误: ${data.description || '未知错误'}`);
     }
     
     return data;
   } catch (error) {
     console.error('发送 Telegram 消息错误:', error);
-    // 如果回复特定消息失败，尝试发送普通消息
+    // 如果是回复消息失败，尝试发送普通消息
     if (replyToMessageId && error.message.includes('message to be replied not found')) {
       return sendTelegramMessage(message, chatId);
     }
-    throw error; 
+    throw error;
   }
 }
 
@@ -87,22 +105,34 @@ async function handleBasicCommand(command) {
 
 // 处理传入的 Telegram 更新
 export async function handleTelegramUpdate(update) {
+  // 验证更新对象的结构
+  if (!update?.message?.chat?.id) {
+    console.error('无效的 Telegram 更新:', update);
+    return;
+  }
+
+  const chatId = update.message.chat.id;
+  const messageId = update.message.message_id;
+
   try {
-    if (update.message && update.message.text) {
+    if (update.message.text) {
       const command = update.message.text.split(' ')[0];
       const response = await handleBasicCommand(command);
-      await sendTelegramMessage(
-        response,
-        update.message.chat.id,
-        update.message.message_id
-      );
+      
+      // 发送响应消息，如果回复失败则发送普通消息
+      try {
+        await sendTelegramMessage(response, chatId, messageId);
+      } catch (error) {
+        if (error.message.includes('message to be replied not found')) {
+          await sendTelegramMessage(response, chatId);
+        } else {
+          throw error;
+        }
+      }
     }
   } catch (error) {
     console.error('处理 Telegram 更新错误:', error);
-    // 发送错误消息时不尝试回复原消息
-    if (update.message?.chat?.id) {
-      await sendTelegramMessage('处理命令时发生错误，请稍后重试。', update.message.chat.id);
-    }
+    await sendTelegramMessage('处理命令时发生错误，请稍后重试。', chatId);
   }
 }
 
