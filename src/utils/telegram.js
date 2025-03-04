@@ -1,7 +1,13 @@
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
+import { createClient } from '@supabase/supabase-js';
 
 dotenv.config();
+
+// 初始化 Supabase 客户端
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 // 帮助信息
 const HELP_MESSAGE = `
@@ -92,14 +98,70 @@ export async function sendTelegramMessage(message, chatId = null, replyToMessage
   }
 }
 
+// 验证 Solana 钱包地址
+function isValidSolanaAddress(address) {
+  // Solana 地址是 base58 编码的 32 字节公钥
+  const base58Regex = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+  return base58Regex.test(address);
+}
+
+// 处理添加钱包命令
+async function handleAddWallet(chatId, messageId, args) {
+  if (args.length < 1) {
+    return sendTelegramMessage('❌ 请提供钱包地址\n\n示例：/add_wallet 地址 [备注名]', chatId, messageId);
+  }
+
+  const walletAddress = args[0];
+  const label = args[1] || '未命名钱包';
+
+  if (!isValidSolanaAddress(walletAddress)) {
+    return sendTelegramMessage('❌ 无效的 Solana 钱包地址', chatId, messageId);
+  }
+
+  try {
+    // 检查钱包是否已存在
+    const { data: existingWallet } = await supabase
+      .from('monitored_wallets')
+      .select('*')
+      .eq('wallet_address', walletAddress)
+      .eq('chat_id', chatId)
+      .single();
+
+    if (existingWallet) {
+      return sendTelegramMessage('❌ 该钱包已在监控列表中', chatId, messageId);
+    }
+
+    // 添加新钱包
+    const { error } = await supabase
+      .from('monitored_wallets')
+      .insert([
+        {
+          wallet_address: walletAddress,
+          label: label,
+          chat_id: chatId,
+          created_at: new Date().toISOString()
+        }
+      ]);
+
+    if (error) throw error;
+
+    return sendTelegramMessage(`✅ 成功添加钱包监控\n\n地址：${walletAddress}\n备注：${label}`, chatId, messageId);
+  } catch (error) {
+    console.error('添加钱包错误:', error);
+    return sendTelegramMessage('❌ 添加钱包失败，请稍后重试', chatId, messageId);
+  }
+}
+
 // 处理基本命令
-async function handleBasicCommand(command) {
+async function handleBasicCommand(command, args, chatId, messageId) {
   switch (command.toLowerCase()) {
     case '/start':
     case '/help':
-      return HELP_MESSAGE;
+      return sendTelegramMessage(HELP_MESSAGE, chatId, messageId);
+    case '/add_wallet':
+      return handleAddWallet(chatId, messageId, args);
     default:
-      return '🚧 该功能正在开发中...\n\n使用 /help 查看可用命令。';
+      return sendTelegramMessage('🚧 该功能正在开发中...\n\n使用 /help 查看可用命令。', chatId, messageId);
   }
 }
 
@@ -116,19 +178,12 @@ export async function handleTelegramUpdate(update) {
 
   try {
     if (update.message.text) {
-      const command = update.message.text.split(' ')[0];
-      const response = await handleBasicCommand(command);
+      const parts = update.message.text.split(' ');
+      const command = parts[0];
+      const args = parts.slice(1);
       
-      // 发送响应消息，如果回复失败则发送普通消息
-      try {
-        await sendTelegramMessage(response, chatId, messageId);
-      } catch (error) {
-        if (error.message.includes('message to be replied not found')) {
-          await sendTelegramMessage(response, chatId);
-        } else {
-          throw error;
-        }
-      }
+      const response = await handleBasicCommand(command, args, chatId, messageId);
+      console.log('命令处理成功:', command);
     }
   } catch (error) {
     console.error('处理 Telegram 更新错误:', error);
