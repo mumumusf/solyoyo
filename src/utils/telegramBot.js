@@ -3,11 +3,6 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_KEY
-);
-
 // 帮助信息
 const HELP_MESSAGE = `
 🔍 <b>钱包监控机器人使用指南</b>
@@ -48,6 +43,14 @@ const HELP_MESSAGE = `
 // 验证 Solana 钱包地址格式
 function isValidSolanaAddress(address) {
   return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address);
+}
+
+// 初始化 Supabase 客户端
+function initSupabase() {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
+    throw new Error('Missing Supabase environment variables');
+  }
+  return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 }
 
 // 处理机器人命令
@@ -119,6 +122,8 @@ async function addWallet(args) {
   }
 
   try {
+    const supabase = initSupabase();
+    
     // 检查是否已存在
     const { data: existing } = await supabase
       .from('wallets')
@@ -160,6 +165,8 @@ async function removeWallet(args) {
   }
 
   try {
+    const supabase = initSupabase();
+    
     const { data, error } = await supabase
       .from('wallets')
       .delete()
@@ -184,6 +191,8 @@ async function listWallets(page = 1) {
   const offset = (page - 1) * PAGE_SIZE;
 
   try {
+    const supabase = initSupabase();
+    
     // 获取总数
     const { count } = await supabase
       .from('wallets')
@@ -226,6 +235,8 @@ async function searchWallet(args) {
   const keyword = args.join(' ');
 
   try {
+    const supabase = initSupabase();
+    
     const { data, error } = await supabase
       .from('wallets')
       .select('*')
@@ -264,6 +275,8 @@ async function renameWallet(args) {
   }
 
   try {
+    const supabase = initSupabase();
+    
     const { data, error } = await supabase
       .from('wallets')
       .update({ name: newName })
@@ -285,6 +298,8 @@ async function renameWallet(args) {
 // 获取最近交易
 async function getRecentTransactions(limit = 5) {
   try {
+    const supabase = initSupabase();
+    
     const { data: txs, error: txsError } = await supabase
       .from('txs')
       .select(`
@@ -317,6 +332,8 @@ async function getRecentTransactions(limit = 5) {
 // 获取活跃钱包
 async function getTopWallets() {
   try {
+    const supabase = initSupabase();
+    
     const { data, error } = await supabase
       .from('txs')
       .select(`
@@ -350,6 +367,8 @@ async function getTopWallets() {
 // 获取统计信息
 async function getStats() {
   try {
+    const supabase = initSupabase();
+    
     const { data: wallets, error: walletsError } = await supabase
       .from('wallets')
       .select('*');
@@ -402,6 +421,8 @@ async function setAlert(args) {
   }
 
   try {
+    const supabase = initSupabase();
+    
     const { data, error } = await supabase
       .from('wallets')
       .update({ 
@@ -429,6 +450,8 @@ async function setAlert(args) {
 // 获取特别关注列表
 async function getWatchlist() {
   try {
+    const supabase = initSupabase();
+    
     const { data, error } = await supabase
       .from('wallets')
       .select('*')
@@ -466,6 +489,8 @@ async function addToWatchlist(args) {
   }
 
   try {
+    const supabase = initSupabase();
+    
     const { data, error } = await supabase
       .from('wallets')
       .update({ 
@@ -500,6 +525,8 @@ async function removeFromWatchlist(args) {
   }
 
   try {
+    const supabase = initSupabase();
+    
     const { data, error } = await supabase
       .from('wallets')
       .update({ 
