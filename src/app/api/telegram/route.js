@@ -3,7 +3,19 @@ import { NextResponse } from 'next/server';
 
 export async function POST(request) {
   try {
-    const update = await request.json();
+    // 确保请求体是有效的
+    if (!request.body) {
+      return NextResponse.json({ message: '无效的请求体' }, { status: 400 });
+    }
+
+    let update;
+    try {
+      const text = await request.text();
+      update = JSON.parse(text);
+    } catch (error) {
+      console.error('解析请求体失败:', error);
+      return NextResponse.json({ message: '无效的 JSON 格式' }, { status: 400 });
+    }
     
     // 确保更新包含必要的字段
     if (!update?.message?.chat?.id) {
