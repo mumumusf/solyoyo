@@ -12,17 +12,17 @@ const HELP_MESSAGE = `
 /start - 开始使用机器人
 
 钱包管理：
-/add_wallet <钱包地址> <备注名> - 添加新的钱包监控
-/remove_wallet <钱包地址> - 删除监控的钱包
+/add_wallet [钱包地址] [备注名] - 添加新的钱包监控
+/remove_wallet [钱包地址] - 删除监控的钱包
 /list_wallets [页码] - 列出所有监控的钱包
-/search_wallet <关键词> - 搜索钱包（地址或备注）
+/search_wallet [关键词] - 搜索钱包（地址或备注）
 
 数据统计：
 /stats - 显示监控统计信息
 /recent_txs [数量] - 显示最近的交易记录
 
 高级功能：
-/set_alert <钱包地址> <金额> - 设置大额交易提醒
+/set_alert [钱包地址] [金额] - 设置大额交易提醒
 /watchlist - 查看特别关注的钱包
 
 使用示例：
