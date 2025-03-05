@@ -432,10 +432,12 @@ async function handleRecentTransactions(chatId, text) {
 
 // 处理交易提醒命令
 async function handleAlert(chatId, text) {
-  const state = userStates.get(chatId) || { type: StateType.NONE };
+  try {
+    const state = userStates.get(chatId) || { type: StateType.NONE };
+    console.log('Alert state:', state, 'Input:', text);
 
-  if (state.type === StateType.NONE) {
-    try {
+    if (state.type === StateType.NONE) {
+      // 获取钱包列表
       const { data: wallets, error } = await supabase
         .from('wallets')
         .select('*')
@@ -451,12 +453,14 @@ async function handleAlert(chatId, text) {
         return '📝 监控列表为空\n\n使用 /add 命令添加钱包';
       }
 
-      userStates.set(chatId, { 
+      // 保存钱包列表到状态
+      userStates.set(chatId, {
         type: StateType.WAITING_FOR_WALLET,
         action: 'alert',
         wallets: wallets
       });
 
+      // 构建选择消息
       let message = '请选择要设置交易提醒的钱包序号：\n\n';
       wallets.forEach((wallet, index) => {
         message += `${index + 1}. ${wallet.name}\n`;
@@ -468,17 +472,13 @@ async function handleAlert(chatId, text) {
       });
 
       return message;
-    } catch (error) {
-      console.error('获取钱包列表错误:', error);
-      return '❌ 获取钱包列表失败，请稍后重试';
     }
-  }
 
-  if (state.type === StateType.WAITING_FOR_WALLET && state.action === 'alert') {
-    try {
+    if (state.type === StateType.WAITING_FOR_WALLET && state.action === 'alert') {
       const index = parseInt(text) - 1;
       const { wallets } = state;
 
+      // 验证输入和状态
       if (!wallets || !Array.isArray(wallets)) {
         userStates.delete(chatId);
         return '❌ 系统错误，请重新使用 /alert 命令';
@@ -488,25 +488,22 @@ async function handleAlert(chatId, text) {
         return '❌ 无效的序号，请重新输入：';
       }
 
-      const wallet = wallets[index];
+      const selectedWallet = wallets[index];
+
+      // 更新状态为等待金额输入
       userStates.set(chatId, {
         type: StateType.WAITING_FOR_AMOUNT,
-        wallet: wallet
+        wallet: selectedWallet
       });
 
       return '请输入要提醒的金额（单位：SOL）：\n例如：输入 100 表示交易金额超过 100 SOL 时提醒';
-    } catch (error) {
-      console.error('处理钱包选择错误:', error);
-      userStates.delete(chatId);
-      return '❌ 处理失败，请重新使用 /alert 命令';
     }
-  }
 
-  if (state.type === StateType.WAITING_FOR_AMOUNT) {
-    try {
+    if (state.type === StateType.WAITING_FOR_AMOUNT) {
       const amount = parseFloat(text);
       const { wallet } = state;
 
+      // 验证输入和状态
       if (!wallet || !wallet.address) {
         userStates.delete(chatId);
         return '❌ 系统错误，请重新使用 /alert 命令';
@@ -516,23 +513,10 @@ async function handleAlert(chatId, text) {
         return '❌ 无效的金额，请输入大于 0 的数字：';
       }
 
-      // 先查询最新状态
-      const { data: currentWallet, error: queryError } = await supabase
-        .from('wallets')
-        .select('*')
-        .eq('address', wallet.address)
-        .eq('chat_id', chatId)
-        .single();
-
-      if (queryError) {
-        console.error('查询钱包状态错误:', queryError);
-        throw queryError;
-      }
-
-      // 更新提醒金额
+      // 更新数据库
       const { error: updateError } = await supabase
         .from('wallets')
-        .update({ 
+        .update({
           alert_amount: amount,
           updated_at: new Date().toISOString()
         })
@@ -544,22 +528,28 @@ async function handleAlert(chatId, text) {
         throw updateError;
       }
 
+      // 清理状态
       userStates.delete(chatId);
+
       return `✅ 设置成功！\n\n📝 钱包：${wallet.name}\n💰 提醒金额：${amount} SOL\n\n当该钱包发生超过 ${amount} SOL 的交易时，我会立即通知您。\n\n您可以：\n1️⃣ 继续设置其他钱包的提醒，请输入 /alert\n2️⃣ 查看所有设置，请输入 /list`;
-    } catch (error) {
-      console.error('设置提醒金额错误:', error);
-      userStates.delete(chatId);
-      return '❌ 设置提醒金额失败，请稍后重试';
     }
+
+    return '❌ 系统错误，请重新使用 /alert 命令';
+  } catch (error) {
+    console.error('处理 alert 命令错误:', error);
+    userStates.delete(chatId);
+    return '❌ 设置提醒金额失败，请稍后重试';
   }
 }
 
 // 处理特别关注命令
 async function handleWatch(chatId, text) {
-  const state = userStates.get(chatId) || { type: StateType.NONE };
+  try {
+    const state = userStates.get(chatId) || { type: StateType.NONE };
+    console.log('Watch state:', state, 'Input:', text);
 
-  if (state.type === StateType.NONE) {
-    try {
+    if (state.type === StateType.NONE) {
+      // 获取钱包列表
       const { data: wallets, error } = await supabase
         .from('wallets')
         .select('*')
@@ -575,12 +565,14 @@ async function handleWatch(chatId, text) {
         return '📝 监控列表为空\n\n使用 /add 命令添加钱包';
       }
 
-      userStates.set(chatId, { 
+      // 保存钱包列表到状态
+      userStates.set(chatId, {
         type: StateType.WAITING_FOR_WALLET,
         action: 'watch',
         wallets: wallets
       });
 
+      // 构建选择消息
       let message = '请选择要切换特别关注状态的钱包序号：\n\n';
       wallets.forEach((wallet, index) => {
         message += `${index + 1}. ${wallet.name}\n`;
@@ -590,17 +582,13 @@ async function handleWatch(chatId, text) {
       });
 
       return message;
-    } catch (error) {
-      console.error('获取钱包列表错误:', error);
-      return '❌ 获取钱包列表失败，请稍后重试';
     }
-  }
 
-  if (state.type === StateType.WAITING_FOR_WALLET && state.action === 'watch') {
-    try {
+    if (state.type === StateType.WAITING_FOR_WALLET && state.action === 'watch') {
       const index = parseInt(text) - 1;
       const { wallets } = state;
 
+      // 验证输入和状态
       if (!wallets || !Array.isArray(wallets)) {
         userStates.delete(chatId);
         return '❌ 系统错误，请重新使用 /watch 命令';
@@ -610,30 +598,16 @@ async function handleWatch(chatId, text) {
         return '❌ 无效的序号，请重新输入：';
       }
 
-      const wallet = wallets[index];
-      const newWatchStatus = !wallet.is_watched;
+      const selectedWallet = wallets[index];
 
-      // 先查询最新状态
-      const { data: currentWallet, error: queryError } = await supabase
-        .from('wallets')
-        .select('is_watched')
-        .eq('address', wallet.address)
-        .eq('chat_id', chatId)
-        .single();
-
-      if (queryError) {
-        console.error('查询钱包状态错误:', queryError);
-        throw queryError;
-      }
-
-      // 更新状态
+      // 更新数据库
       const { error: updateError } = await supabase
         .from('wallets')
-        .update({ 
-          is_watched: !currentWallet.is_watched,
+        .update({
+          is_watched: !selectedWallet.is_watched,
           updated_at: new Date().toISOString()
         })
-        .eq('address', wallet.address)
+        .eq('address', selectedWallet.address)
         .eq('chat_id', chatId);
 
       if (updateError) {
@@ -641,13 +615,17 @@ async function handleWatch(chatId, text) {
         throw updateError;
       }
 
+      // 清理状态
       userStates.delete(chatId);
-      return `✅ 设置成功！\n\n📝 钱包：${wallet.name}\n${!currentWallet.is_watched ? '⭐️ 已添加到特别关注\n' : '☆ 已取消特别关注\n'}\n您可以：\n1️⃣ 继续设置其他钱包，请输入 /watch\n2️⃣ 查看所有设置，请输入 /list`;
-    } catch (error) {
-      console.error('设置特别关注状态错误:', error);
-      userStates.delete(chatId);
-      return '❌ 设置特别关注状态失败，请稍后重试';
+
+      return `✅ 设置成功！\n\n📝 钱包：${selectedWallet.name}\n${!selectedWallet.is_watched ? '⭐️ 已添加到特别关注\n' : '☆ 已取消特别关注\n'}\n您可以：\n1️⃣ 继续设置其他钱包，请输入 /watch\n2️⃣ 查看所有设置，请输入 /list`;
     }
+
+    return '❌ 系统错误，请重新使用 /watch 命令';
+  } catch (error) {
+    console.error('处理 watch 命令错误:', error);
+    userStates.delete(chatId);
+    return '❌ 设置特别关注状态失败，请稍后重试';
   }
 }
 
