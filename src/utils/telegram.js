@@ -348,6 +348,13 @@ async function handleBasicCommand(command, chatId, text) {
       if (state) {
         switch (state.type) {
           case StateType.WAITING_FOR_WALLET:
+            if (state.wallets) {
+              // 如果 wallets 存在，说明是删除操作
+              return await handleRemoveWallet(chatId, text);
+            } else {
+              // 否则是添加操作
+              return await handleAddWallet(chatId, text);
+            }
           case StateType.WAITING_FOR_NAME:
             return await handleAddWallet(chatId, text);
           default:
