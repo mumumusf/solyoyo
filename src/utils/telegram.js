@@ -67,14 +67,7 @@ export async function sendTelegramMessage(message, chatId = null, replyToMessage
   }
 
   const botToken = process.env.TELEGRAM_TOKEN;
-  console.log('使用的 bot token:', botToken);
-  
-  if (!botToken) {
-    throw new Error('TELEGRAM_TOKEN 环境变量未设置');
-  }
-
   const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
-  console.log('请求 URL:', url);
 
   try {
     const messageData = {
@@ -84,11 +77,10 @@ export async function sendTelegramMessage(message, chatId = null, replyToMessage
       disable_web_page_preview: true
     };
 
+    // 只有在提供了有效的 message_id 时才添加回复参数
     if (replyToMessageId && Number.isInteger(replyToMessageId) && replyToMessageId > 0) {
       messageData.reply_to_message_id = replyToMessageId;
     }
-
-    console.log('发送消息数据:', JSON.stringify(messageData));
 
     const response = await fetch(url, {
       method: 'POST',
@@ -99,9 +91,9 @@ export async function sendTelegramMessage(message, chatId = null, replyToMessage
     });
 
     const data = await response.json();
-    console.log('Telegram API 响应:', data);
     
     if (!data.ok) {
+      // 如果是回复消息失败，尝试发送普通消息
       if (messageData.reply_to_message_id && data.description?.includes('message to be replied not found')) {
         delete messageData.reply_to_message_id;
         return sendTelegramMessage(message, chatId);
@@ -112,6 +104,7 @@ export async function sendTelegramMessage(message, chatId = null, replyToMessage
     return data;
   } catch (error) {
     console.error('发送 Telegram 消息错误:', error);
+    // 如果是回复消息失败，尝试发送普通消息
     if (replyToMessageId && error.message.includes('message to be replied not found')) {
       return sendTelegramMessage(message, chatId);
     }
@@ -119,12 +112,190 @@ export async function sendTelegramMessage(message, chatId = null, replyToMessage
   }
 }
 
+// 处理钱包添加命令
+async function handleAddWallet(chatId, params) {
+  if (params.length < 2) {
+    return '❌ 请提供钱包地址和备注名\n\n示例：/add_wallet 7NsAJ6DYM7qRzxVXWCGwqZpBEQUVCwS6gQUAi5kXCzVj 大户A';
+  }
+
+  const [walletAddress, ...nameArr] = params;
+  const name = nameArr.join(' ');
+
+  try {
+    // 验证钱包地址格式
+    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(walletAddress)) {
+      return '❌ 无效的 Solana 钱包地址格式';
+    }
+
+    // 检查钱包是否已存在
+    const { data: existingWallet } = await supabase
+      .from('wallets')
+      .select()
+      .eq('address', walletAddress)
+      .eq('chat_id', chatId)
+      .single();
+
+    if (existingWallet) {
+      return `❌ 该钱包已在监控列表中：\n地址：${walletAddress}\n备注：${existingWallet.name}`;
+    }
+
+    // 添加新钱包
+    const { error } = await supabase
+      .from('wallets')
+      .insert([
+        {
+          address: walletAddress,
+          name: name,
+          chat_id: chatId,
+          created_at: new Date().toISOString()
+        }
+      ]);
+
+    if (error) throw error;
+
+    return `✅ 成功添加钱包到监控列表\n\n📝 地址：${walletAddress}\n📌 备注：${name}`;
+  } catch (error) {
+    console.error('添加钱包错误:', error);
+    return '❌ 添加钱包失败，请稍后重试';
+  }
+}
+
+// 处理钱包删除命令
+async function handleRemoveWallet(chatId, params) {
+  if (params.length < 1) {
+    return '❌ 请提供要删除的钱包地址\n\n示例：/remove_wallet 7NsAJ6DYM7qRzxVXWCGwqZpBEQUVCwS6gQUAi5kXCzVj';
+  }
+
+  const walletAddress = params[0];
+
+  try {
+    // 检查钱包是否存在
+    const { data: existingWallet } = await supabase
+      .from('wallets')
+      .select()
+      .eq('address', walletAddress)
+      .eq('chat_id', chatId)
+      .single();
+
+    if (!existingWallet) {
+      return '❌ 该钱包不在监控列表中';
+    }
+
+    // 删除钱包
+    const { error } = await supabase
+      .from('wallets')
+      .delete()
+      .eq('address', walletAddress)
+      .eq('chat_id', chatId);
+
+    if (error) throw error;
+
+    return `✅ 已从监控列表中删除钱包\n\n📝 地址：${walletAddress}\n📌 备注：${existingWallet.name}`;
+  } catch (error) {
+    console.error('删除钱包错误:', error);
+    return '❌ 删除钱包失败，请稍后重试';
+  }
+}
+
+// 处理钱包列表命令
+async function handleListWallets(chatId, params) {
+  const page = params.length > 0 ? parseInt(params[0]) : 1;
+  const pageSize = 10;
+  const offset = (page - 1) * pageSize;
+
+  try {
+    // 获取总数
+    const { count } = await supabase
+      .from('wallets')
+      .select('*', { count: 'exact' })
+      .eq('chat_id', chatId);
+
+    // 获取当前页数据
+    const { data: wallets, error } = await supabase
+      .from('wallets')
+      .select('*')
+      .eq('chat_id', chatId)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + pageSize - 1);
+
+    if (error) throw error;
+
+    if (!wallets || wallets.length === 0) {
+      return '📝 监控列表为空\n\n使用 /add_wallet 命令添加钱包';
+    }
+
+    const totalPages = Math.ceil(count / pageSize);
+    let message = `📋 监控钱包列表 (第 ${page}/${totalPages} 页)\n\n`;
+    
+    wallets.forEach((wallet, index) => {
+      message += `${index + 1 + offset}. ${wallet.name}\n`;
+      message += `📝 ${wallet.address}\n`;
+      message += `⏰ ${new Date(wallet.created_at).toLocaleString()}\n\n`;
+    });
+
+    if (page < totalPages) {
+      message += `\n👉 使用 /list_wallets ${page + 1} 查看下一页`;
+    }
+
+    return message;
+  } catch (error) {
+    console.error('获取钱包列表错误:', error);
+    return '❌ 获取钱包列表失败，请稍后重试';
+  }
+}
+
+// 处理钱包搜索命令
+async function handleSearchWallet(chatId, params) {
+  if (params.length < 1) {
+    return '❌ 请提供搜索关键词\n\n示例：/search_wallet 大户';
+  }
+
+  const keyword = params.join(' ');
+
+  try {
+    const { data: wallets, error } = await supabase
+      .from('wallets')
+      .select('*')
+      .eq('chat_id', chatId)
+      .or(`name.ilike.%${keyword}%,address.ilike.%${keyword}%`)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (error) throw error;
+
+    if (!wallets || wallets.length === 0) {
+      return '❌ 未找到匹配的钱包';
+    }
+
+    let message = `🔍 搜索结果 "${keyword}"\n\n`;
+    
+    wallets.forEach((wallet, index) => {
+      message += `${index + 1}. ${wallet.name}\n`;
+      message += `📝 ${wallet.address}\n`;
+      message += `⏰ ${new Date(wallet.created_at).toLocaleString()}\n\n`;
+    });
+
+    return message;
+  } catch (error) {
+    console.error('搜索钱包错误:', error);
+    return '❌ 搜索钱包失败，请稍后重试';
+  }
+}
+
 // 处理基本命令
-async function handleBasicCommand(command) {
+async function handleBasicCommand(command, chatId, params = []) {
   switch (command.toLowerCase()) {
     case '/start':
     case '/help':
       return HELP_MESSAGE;
+    case '/add_wallet':
+      return await handleAddWallet(chatId, params);
+    case '/remove_wallet':
+      return await handleRemoveWallet(chatId, params);
+    case '/list_wallets':
+      return await handleListWallets(chatId, params);
+    case '/search_wallet':
+      return await handleSearchWallet(chatId, params);
     default:
       return '🚧 该功能正在开发中...\n\n使用 /help 查看可用命令。';
   }
@@ -143,8 +314,8 @@ export async function handleTelegramUpdate(update) {
 
   try {
     if (update.message.text) {
-      const command = update.message.text.split(' ')[0];
-      const response = await handleBasicCommand(command);
+      const [command, ...params] = update.message.text.split(' ');
+      const response = await handleBasicCommand(command, chatId, params);
       
       // 发送响应消息，如果回复失败则发送普通消息
       try {
