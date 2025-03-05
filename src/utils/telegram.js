@@ -6,8 +6,8 @@ dotenv.config();
 
 // 检查必要的环境变量
 const requiredEnvVars = {
-  'NEXT_PUBLIC_SUPABASE_URL': process.env.NEXT_PUBLIC_SUPABASE_URL,
-  'SUPABASE_SERVICE_ROLE_KEY': process.env.SUPABASE_SERVICE_ROLE_KEY,
+  'SUPABASE_URL': process.env.SUPABASE_URL,
+  'SUPABASE_KEY': process.env.SUPABASE_KEY,
   'TELEGRAM_TOKEN': process.env.TELEGRAM_TOKEN
 };
 
@@ -19,8 +19,8 @@ for (const [name, value] of Object.entries(requiredEnvVars)) {
 
 // 初始化 Supabase 客户端
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY
 );
 
 // 帮助信息
@@ -121,8 +121,6 @@ async function handleAddWallet(chatId, params) {
   const [walletAddress, ...nameArr] = params;
   const name = nameArr.join(' ');
 
-  console.log('添加钱包 - 参数:', { chatId, walletAddress, name });
-
   try {
     // 验证钱包地址格式
     if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(walletAddress)) {
@@ -130,26 +128,19 @@ async function handleAddWallet(chatId, params) {
     }
 
     // 检查钱包是否已存在
-    const { data: wallets, error: selectError } = await supabase
+    const { data: existingWallet } = await supabase
       .from('wallets')
       .select()
       .eq('address', walletAddress)
-      .eq('chat_id', chatId);
+      .eq('chat_id', chatId)
+      .single();
 
-    console.log('查询结果:', { wallets, selectError });
-
-    if (selectError) {
-      console.error('查询钱包错误:', selectError);
-      throw selectError;
-    }
-
-    if (wallets && wallets.length > 0) {
-      const existingWallet = wallets[0];
+    if (existingWallet) {
       return `❌ 该钱包已在监控列表中：\n地址：${walletAddress}\n备注：${existingWallet.name}`;
     }
 
     // 添加新钱包
-    const { error: insertError } = await supabase
+    const { error } = await supabase
       .from('wallets')
       .insert([
         {
@@ -160,12 +151,7 @@ async function handleAddWallet(chatId, params) {
         }
       ]);
 
-    console.log('添加结果:', { insertError });
-
-    if (insertError) {
-      console.error('添加钱包错误:', insertError);
-      throw insertError;
-    }
+    if (error) throw error;
 
     return `✅ 成功添加钱包到监控列表\n\n📝 地址：${walletAddress}\n📌 备注：${name}`;
   } catch (error) {
