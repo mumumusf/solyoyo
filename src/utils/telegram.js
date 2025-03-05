@@ -167,28 +167,41 @@ async function handleRemoveWallet(chatId, params) {
   }
 
   const walletAddress = params[0];
+  console.log('删除钱包 - 参数:', { chatId, walletAddress });
 
   try {
     // 检查钱包是否存在
-    const { data: existingWallet } = await supabase
+    const { data: existingWallet, error: selectError } = await supabase
       .from('wallets')
       .select()
       .eq('address', walletAddress)
       .eq('chat_id', chatId)
       .single();
 
+    console.log('查询结果:', { existingWallet, selectError });
+
+    if (selectError) {
+      console.error('查询钱包错误:', selectError);
+      throw selectError;
+    }
+
     if (!existingWallet) {
       return '❌ 该钱包不在监控列表中';
     }
 
     // 删除钱包
-    const { error } = await supabase
+    const { error: deleteError } = await supabase
       .from('wallets')
       .delete()
       .eq('address', walletAddress)
       .eq('chat_id', chatId);
 
-    if (error) throw error;
+    console.log('删除结果:', { deleteError });
+
+    if (deleteError) {
+      console.error('删除钱包错误:', deleteError);
+      throw deleteError;
+    }
 
     return `✅ 已从监控列表中删除钱包\n\n📝 地址：${walletAddress}\n📌 备注：${existingWallet.name}`;
   } catch (error) {
