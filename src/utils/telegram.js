@@ -520,11 +520,6 @@ async function handleWatch(chatId, text) {
   const state = userStates.get(chatId) || { type: StateType.NONE };
 
   if (state.type === StateType.NONE) {
-    userStates.set(chatId, { 
-      type: StateType.WAITING_FOR_WALLET,
-      action: 'watch'
-    });
-
     try {
       const { data: wallets, error } = await supabase
         .from('wallets')
@@ -538,6 +533,12 @@ async function handleWatch(chatId, text) {
         userStates.delete(chatId);
         return '📝 监控列表为空\n\n使用 /add 命令添加钱包';
       }
+
+      userStates.set(chatId, { 
+        type: StateType.WAITING_FOR_WALLET,
+        action: 'watch',
+        wallets: wallets  // 保存钱包列表到状态中
+      });
 
       let message = '请选择要切换特别关注状态的钱包序号：\n\n';
       wallets.forEach((wallet, index) => {
@@ -556,17 +557,22 @@ async function handleWatch(chatId, text) {
   }
 
   if (state.type === StateType.WAITING_FOR_WALLET && state.action === 'watch') {
-    const index = parseInt(text) - 1;
-    const { wallets } = state;
-
-    if (isNaN(index) || index < 0 || index >= wallets.length) {
-      return '❌ 无效的序号，请重新输入：';
-    }
-
-    const wallet = wallets[index];
-    const newWatchStatus = !wallet.is_watched;
-
     try {
+      const index = parseInt(text) - 1;
+      const { wallets } = state;
+
+      if (!wallets || !Array.isArray(wallets)) {
+        userStates.delete(chatId);
+        return '❌ 系统错误，请重新使用 /watch 命令';
+      }
+
+      if (isNaN(index) || index < 0 || index >= wallets.length) {
+        return '❌ 无效的序号，请重新输入：';
+      }
+
+      const wallet = wallets[index];
+      const newWatchStatus = !wallet.is_watched;
+
       const { error } = await supabase
         .from('wallets')
         .update({ is_watched: newWatchStatus })
