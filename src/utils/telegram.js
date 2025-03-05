@@ -23,6 +23,16 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
+// 用户状态管理
+const userStates = new Map();
+
+// 用户状态类型
+const StateType = {
+  NONE: 'NONE',
+  WAITING_FOR_WALLET: 'WAITING_FOR_WALLET',
+  WAITING_FOR_NAME: 'WAITING_FOR_NAME'
+};
+
 // 帮助信息
 const HELP_MESSAGE = `
 🔍 <b>钱包监控机器人使用指南</b>
@@ -32,28 +42,18 @@ const HELP_MESSAGE = `
 /start - 开始使用机器人
 
 钱包管理：
-/add_wallet [钱包地址] [备注名] - 添加新的钱包监控
-/remove_wallet [钱包地址] - 删除监控的钱包
-/list_wallets [页码] - 列出所有监控的钱包
-/search_wallet [关键词] - 搜索钱包（地址或备注）
+/add - 添加新的钱包监控
+/remove - 删除监控的钱包
+/list - 列出所有监控的钱包
+/search - 搜索钱包
 
 数据统计：
 /stats - 显示监控统计信息
-/recent_txs [数量] - 显示最近的交易记录
+/recent - 显示最近的交易记录
 
 高级功能：
-/set_alert [钱包地址] [金额] - 设置大额交易提醒
-/watchlist - 查看特别关注的钱包
-
-使用示例：
-➊ 添加钱包监控
-/add_wallet 7NsAJ6DYM7qRzxVXWCGwqZpBEQUVCwS6gQUAi5kXCzVj 大户A
-
-➋ 设置大额提醒
-/set_alert 7NsAJ6DYM7qRzxVXWCGwqZpBEQUVCwS6gQUAi5kXCzVj 10000
-
-➌ 查看最近交易
-/recent_txs 5
+/alert - 设置大额交易提醒
+/watch - 查看特别关注的钱包
 `;
 
 // 发送 Telegram 消息
@@ -113,87 +113,130 @@ export async function sendTelegramMessage(message, chatId = null, replyToMessage
 }
 
 // 处理钱包添加命令
-async function handleAddWallet(chatId, params) {
-  if (params.length < 2) {
-    return '❌ 请提供钱包地址和备注名\n\n示例：/add_wallet 7NsAJ6DYM7qRzxVXWCGwqZpBEQUVCwS6gQUAi5kXCzVj 大户A';
+async function handleAddWallet(chatId, text) {
+  const state = userStates.get(chatId) || { type: StateType.NONE };
+
+  if (state.type === StateType.NONE) {
+    userStates.set(chatId, { type: StateType.WAITING_FOR_WALLET });
+    return '请输入要监控的钱包地址：';
   }
 
-  const [walletAddress, ...nameArr] = params;
-  const name = nameArr.join(' ');
-
-  try {
+  if (state.type === StateType.WAITING_FOR_WALLET) {
     // 验证钱包地址格式
-    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(walletAddress)) {
-      return '❌ 无效的 Solana 钱包地址格式';
+    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(text)) {
+      return '❌ 无效的 Solana 钱包地址格式，请重新输入：';
     }
 
-    // 检查钱包是否已存在
-    const { data: existingWallet } = await supabase
-      .from('wallets')
-      .select()
-      .eq('address', walletAddress)
-      .eq('chat_id', chatId)
-      .single();
+    userStates.set(chatId, { 
+      type: StateType.WAITING_FOR_NAME,
+      walletAddress: text 
+    });
+    return '钱包地址验证通过！\n请为这个钱包输入一个备注名称：';
+  }
 
-    if (existingWallet) {
-      return `❌ 该钱包已在监控列表中：\n地址：${walletAddress}\n备注：${existingWallet.name}`;
-    }
+  if (state.type === StateType.WAITING_FOR_NAME) {
+    const { walletAddress } = state;
+    const name = text;
 
-    // 添加新钱包
-    const { error } = await supabase
-      .from('wallets')
-      .insert([
-        {
+    try {
+      // 检查钱包是否已存在
+      const { data: existingWallet } = await supabase
+        .from('wallets')
+        .select()
+        .eq('address', walletAddress)
+        .eq('chat_id', chatId)
+        .single();
+
+      if (existingWallet) {
+        userStates.delete(chatId);
+        return `❌ 该钱包已在监控列表中：\n地址：${walletAddress}\n备注：${existingWallet.name}`;
+      }
+
+      // 添加新钱包
+      const { error } = await supabase
+        .from('wallets')
+        .insert([{
           address: walletAddress,
           name: name,
           chat_id: chatId,
           created_at: new Date().toISOString()
-        }
-      ]);
+        }]);
 
-    if (error) throw error;
+      if (error) throw error;
 
-    return `✅ 成功添加钱包到监控列表\n\n📝 地址：${walletAddress}\n📌 备注：${name}`;
-  } catch (error) {
-    console.error('添加钱包错误:', error);
-    return '❌ 添加钱包失败，请稍后重试';
+      userStates.delete(chatId);
+      return `✅ 成功添加钱包到监控列表\n\n📝 地址：${walletAddress}\n📌 备注：${name}\n\n您可以：\n1️⃣ 继续添加新钱包，请输入 /add\n2️⃣ 查看钱包列表，请输入 /list`;
+    } catch (error) {
+      console.error('添加钱包错误:', error);
+      userStates.delete(chatId);
+      return '❌ 添加钱包失败，请稍后重试';
+    }
   }
 }
 
 // 处理钱包删除命令
-async function handleRemoveWallet(chatId, params) {
-  if (params.length < 1) {
-    return '❌ 请提供要删除的钱包地址\n\n示例：/remove_wallet 7NsAJ6DYM7qRzxVXWCGwqZpBEQUVCwS6gQUAi5kXCzVj';
+async function handleRemoveWallet(chatId, text) {
+  const state = userStates.get(chatId) || { type: StateType.NONE };
+
+  if (state.type === StateType.NONE) {
+    // 获取用户的钱包列表
+    try {
+      const { data: wallets, error } = await supabase
+        .from('wallets')
+        .select('*')
+        .eq('chat_id', chatId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      if (!wallets || wallets.length === 0) {
+        return '📝 监控列表为空\n\n使用 /add 命令添加钱包';
+      }
+
+      let message = '请选择要删除的钱包序号：\n\n';
+      wallets.forEach((wallet, index) => {
+        message += `${index + 1}. ${wallet.name}\n`;
+        message += `📝 ${wallet.address}\n\n`;
+      });
+
+      userStates.set(chatId, { 
+        type: StateType.WAITING_FOR_WALLET,
+        wallets: wallets
+      });
+
+      return message;
+    } catch (error) {
+      console.error('获取钱包列表错误:', error);
+      return '❌ 获取钱包列表失败，请稍后重试';
+    }
   }
 
-  const walletAddress = params[0];
+  if (state.type === StateType.WAITING_FOR_WALLET) {
+    const index = parseInt(text) - 1;
+    const { wallets } = state;
 
-  try {
-    // 检查钱包是否存在
-    const { data: existingWallet } = await supabase
-      .from('wallets')
-      .select()
-      .eq('address', walletAddress)
-      .eq('chat_id', chatId)
-      .single();
-
-    if (!existingWallet) {
-      return '❌ 该钱包不在监控列表中';
+    if (isNaN(index) || index < 0 || index >= wallets.length) {
+      return '❌ 无效的序号，请重新输入：';
     }
 
-    // 删除钱包
-    const { error } = await supabase
-      .from('wallets')
-      .delete()
-      .eq('address', walletAddress)
-      .eq('chat_id', chatId);
+    const wallet = wallets[index];
 
-    if (error) throw error;
+    try {
+      const { error } = await supabase
+        .from('wallets')
+        .delete()
+        .eq('address', wallet.address)
+        .eq('chat_id', chatId);
 
-    return `✅ 已从监控列表中删除钱包\n\n📝 地址：${walletAddress}\n📌 备注：${existingWallet.name}`;
-  } catch (error) {
-    console.error('删除钱包错误:', error);
-    return '❌ 删除钱包失败，请稍后重试';
+      if (error) throw error;
+
+      userStates.delete(chatId);
+      return `✅ 已从监控列表中删除钱包\n\n📝 地址：${wallet.address}\n📌 备注：${wallet.name}\n\n您可以：\n1️⃣ 继续删除钱包，请输入 /remove\n2️⃣ 查看钱包列表，请输入 /list`;
+    } catch (error) {
+      console.error('删除钱包错误:', error);
+      userStates.delete(chatId);
+      return '❌ 删除钱包失败，请稍后重试';
+    }
   }
 }
 
@@ -221,7 +264,7 @@ async function handleListWallets(chatId, params) {
     if (error) throw error;
 
     if (!wallets || wallets.length === 0) {
-      return '📝 监控列表为空\n\n使用 /add_wallet 命令添加钱包';
+      return '📝 监控列表为空\n\n使用 /add 命令添加钱包';
     }
 
     const totalPages = Math.ceil(count / pageSize);
@@ -234,7 +277,7 @@ async function handleListWallets(chatId, params) {
     });
 
     if (page < totalPages) {
-      message += `\n👉 使用 /list_wallets ${page + 1} 查看下一页`;
+      message += `\n👉 使用 /list ${page + 1} 查看下一页`;
     }
 
     return message;
@@ -247,7 +290,7 @@ async function handleListWallets(chatId, params) {
 // 处理钱包搜索命令
 async function handleSearchWallet(chatId, params) {
   if (params.length < 1) {
-    return '❌ 请提供搜索关键词\n\n示例：/search_wallet 大户';
+    return '❌ 请提供搜索关键词\n\n示例：/search 大户';
   }
 
   const keyword = params.join(' ');
@@ -283,20 +326,34 @@ async function handleSearchWallet(chatId, params) {
 }
 
 // 处理基本命令
-async function handleBasicCommand(command, chatId, params = []) {
+async function handleBasicCommand(command, chatId, text) {
   switch (command.toLowerCase()) {
     case '/start':
     case '/help':
+      userStates.delete(chatId);
       return HELP_MESSAGE;
-    case '/add_wallet':
-      return await handleAddWallet(chatId, params);
-    case '/remove_wallet':
-      return await handleRemoveWallet(chatId, params);
-    case '/list_wallets':
-      return await handleListWallets(chatId, params);
-    case '/search_wallet':
-      return await handleSearchWallet(chatId, params);
+    case '/add':
+      return await handleAddWallet(chatId, text);
+    case '/remove':
+      return await handleRemoveWallet(chatId, text);
+    case '/list':
+      userStates.delete(chatId);
+      return await handleListWallets(chatId, []);
+    case '/search':
+      userStates.delete(chatId);
+      return await handleSearchWallet(chatId, [text]);
     default:
+      // 检查是否在等待用户输入
+      const state = userStates.get(chatId);
+      if (state) {
+        switch (state.type) {
+          case StateType.WAITING_FOR_WALLET:
+          case StateType.WAITING_FOR_NAME:
+            return await handleAddWallet(chatId, text);
+          default:
+            return '🚧 该功能正在开发中...\n\n使用 /help 查看可用命令。';
+        }
+      }
       return '🚧 该功能正在开发中...\n\n使用 /help 查看可用命令。';
   }
 }
@@ -311,13 +368,13 @@ export async function handleTelegramUpdate(update) {
 
   const chatId = update.message.chat.id;
   const messageId = update.message.message_id;
+  const text = update.message.text;
 
   try {
-    if (update.message.text) {
-      const [command, ...params] = update.message.text.split(' ');
-      const response = await handleBasicCommand(command, chatId, params);
+    if (text) {
+      const [command] = text.split(' ');
+      const response = await handleBasicCommand(command, chatId, text);
       
-      // 发送响应消息，如果回复失败则发送普通消息
       try {
         await sendTelegramMessage(response, chatId, messageId);
       } catch (error) {
